@@ -86,3 +86,134 @@ cond_vida <- cond_vida%>%select(DIRECTORIO, SECUENCIA_ENCUESTA, SECUENCIA_P, ORD
                                 P3203S8, P3203S9, P3353, P3354)
 #Exportar
 write.csv(cond_vida, "condiciones_de_vida.csv")
+
+
+#Base educación
+#Cargar base de educación
+educ <- read.csv("Educación.csv")
+#103 variables y 238.888 observaciones
+#Lo anterior significa que las variables NO están a nivel hogar:
+
+#Máximo nivel educativo en el hogar.P8587
+#Ver los niveles educativos
+educ%>%count(P8587)
+#cambiar los NA por 0
+educ$P8587[which(is.na(educ$P8587))] <- 0
+#Ver de nuevo los niveles educativos
+educ%>%count(P8587)
+
+#Esto prácticamente está ordenado, se trata de escoger el máximo
+max_educ_level <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(Max_educ = max(P8587))
+
+#Alguien estudia en el hogar?
+educ%>%count(P8586) #Bien porque no hay NA
+
+#Como 1 es que sí estudia y 2 que no, queremos el mínimo de cada hogar
+alguien_estudia <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(alguien_estudia = min(P8586))
+
+#Tiempo promedio de desplazamiento hacia donde estudia
+tiempo_promedio_transporte <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(tiempo_promedio_transporte = mean(P6167, na.rm = TRUE))
+
+#Se crea la función de la moda
+moda <- function(codes){
+  which.max(tabulate(codes))
+}
+
+moda(educ$P4693)
+
+#Principal medio de transporte hacia la institución educativa
+medio_transporte <-  educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(transporte = moda(P4693))
+
+
+#Tiempo dedicado al estudio (moda, máximo y mínimo)
+tiempo_estudio <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(tiempo_moda_estudio = moda(P3340),
+                                                                       tiempo_max_estudio = max(P3340, na.rm = TRUE),
+                                                                       tiempo_min_estudio = min(P3340, na.rm = TRUE))
+
+
+
+#Se obtiene el gasto total en educación
+#Se agrupa el total gastado a nivel hogar por división (para la de educación)
+Valores_nivel_hogar <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%
+  summarise(valor_matricula = sum(P3341S1, na.rm = TRUE),
+            valor_uniformes = sum(P3342S1, na.rm = TRUE),
+            valor_utiles    = sum(P3343S1, na.rm = TRUE),
+            valor_pension   = sum(P3344S1, na.rm = TRUE),
+            valor_transporte= sum(P3345S1, na.rm = TRUE),
+            valor_alimento  = sum(P3346S1, na.rm = TRUE))%>%
+  ungroup()
+
+
+##########Tener en cuenta que la encuesta indica que es durante el AÑO ESCOLAR
+
+#Se suma el total gastado por hogar en educación
+Valores_nivel_hogar$valor_total <- apply(Valores_nivel_hogar%>%select(-DIRECTORIO,-SECUENCIA_P), 1, sum)
+
+
+#Ver si los hogares recibieron becas. Como 1 es sí y 2 es no, se busca el mínimo. (Al menos alguien que estudia recibió una beca)
+becas <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(beca = min(P8610, na.rm = TRUE), monto_beca = sum(P8610S1, na.rm = TRUE))
+becas$beca[which(becas$beca > 2)] <- 0
+
+#Subsidios
+subsidio <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(subsidio = min(P8612, na.rm = TRUE), monto_subsidio = sum(P8612S1, na.rm = TRUE))
+subsidio$subsidio[which(subsidio$subsidio > 2)] <- 0
+
+#Crédito educativo
+credito <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(credito = min(P8614, na.rm = TRUE), monto_credito = sum(P8614S1, na.rm = TRUE))
+credito$credito[which(credito$credito > 2)] <- 0
+
+
+################Bases de actividades extracurriculares
+extracurriculares <- educ%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(arte = max(P3004S1, na.rm = TRUE),
+                                                                          ciencia = max(P3004S2, na.rm = TRUE),
+                                                                          deportes = max(P3004S3, na.rm = TRUE),
+                                                                          grupos_estudio = max(P3004S4, na.rm = TRUE),
+                                                                          parque = max(P3004S5, na.rm = TRUE),
+                                                                          lectura = max(P3004S6, na.rm = TRUE),
+                                                                          juegos = max(P3004S7, na.rm = TRUE))
+#Se llevan a 0 los -infinitos
+extracurriculares$arte[which(extracurriculares$arte < 0)] <- 0
+extracurriculares$ciencia[which(extracurriculares$ciencia < 0)] <- 0
+extracurriculares$deportes[which(extracurriculares$deportes < 0)] <- 0
+extracurriculares$grupos_estudio[which(extracurriculares$grupos_estudio < 0)] <- 0
+extracurriculares$parque[which(extracurriculares$parque < 0)] <- 0
+extracurriculares$lectura[which(extracurriculares$lectura < 0)] <- 0
+extracurriculares$juegos[which(extracurriculares$juegos < 0)] <- 0
+
+extracurriculares$alguna_extra <- apply(extracurriculares%>%ungroup()%>%select(-DIRECTORIO,-SECUENCIA_P), 1, max)
+#Ojo porque si se mandan por separado y se manda esta última se crea multicolinealidad en una regresión
+
+
+#Unión de las bases creadas hasta el momento.
+base_educ <- full_join(max_educ_level, alguien_estudia)
+base_educ <- full_join(base_educ, medio_transporte)
+base_educ <- full_join(base_educ, tiempo_promedio_transporte)
+base_educ <- full_join(base_educ, tiempo_estudio)
+base_educ <- full_join(base_educ, Valores_nivel_hogar)
+base_educ <- full_join(base_educ, becas)
+base_educ <- full_join(base_educ, subsidio)
+base_educ <- full_join(base_educ, credito)
+base_educ <- full_join(base_educ, extracurriculares)
+
+#Si nadie estudia, las siguientes variables se llevan a 0, 
+#creería que estas observaciones igual deben eliminarse
+base_educ$transporte[which(base_educ$alguien_estudia == 2)] <- 0
+base_educ$tiempo_moda_estudio[which(base_educ$alguien_estudia == 2)] <- 0
+base_educ$tiempo_max_estudio[which(base_educ$alguien_estudia == 2)] <- 0
+base_educ$tiempo_min_estudio[which(base_educ$alguien_estudia == 2)] <- 0
+
+#Los inf y los -inf se llevan a NaN
+base_educ$tiempo_max_estudio[which(base_educ$tiempo_max_estudio < 0)] <- NaN
+base_educ$tiempo_min_estudio[which(base_educ$tiempo_min_estudio > 10000)] <- NaN
+
+#Suma de todas las ayudas existentes
+
+
+base_educ$ayudas_total <- apply(base_educ%>%ungroup()%>%select(monto_beca, monto_subsidio, monto_credito), 1, sum)
+
+
+
+#Exportar la base de datos.
+#directorio Daniel  
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+write.csv(base_educ, "Base_educacion.csv")
