@@ -217,3 +217,204 @@ base_educ$ayudas_total <- apply(base_educ%>%ungroup()%>%select(monto_beca, monto
 #directorio Daniel  
 setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
 write.csv(base_educ, "Base_educacion.csv")
+
+
+############################Fuerza de trabajo}
+f_trabajo <- read.csv("Fuerza de trabajo.csv")
+#Tiene 95 variables
+#P6240 Actividad desempeñada (Se puede sacar la tasa de ocupación,
+#la tasa de desempleo por hogar y la tasa de estudiantes)
+
+actividad <- f_trabajo%>%group_by(DIRECTORIO, SECUENCIA_P)%>%count(P6240)
+
+#Se hace el reshape para tener el número de personas en cada actividad por hogar
+reshape_actividad <- pivot_wider(actividad, names_from = P6240, values_from = n)
+
+#1. Trabajando
+#2. Buscando trabajo
+#3. Estudiante
+#4. Oficios del hogar
+#5. Incapacitado permantente
+#6. Otra
+
+
+#Cambio de los nombres de las variables
+colnames(reshape_actividad) <- c("DIRECTORIO", "SECUENCIA_P", "Trabajo",
+                                 "Desempleo", "Oficios", "Estudiante", "Incapacidad",
+                                 "Otra")
+
+
+#Para poder calcular correctamente las tasas, necesitamos armar el denominador con el número de personas.
+#para esto se necesita la base de características del hogar
+caract_hogar <- read.csv("Caracteristicas y composicion del hogar.csv", sep = ";")
+
+#Mayores de 10 años y mayores de 15 años (cantidad de personas)
+#Se crean 1 si cumple con la condición 0 de lo contrario
+#10 y 15 años es para tener una mejor aproximación de la PET que permite un cálculo más preciso de las tasas de ocupados o desempleados...
+caract_hogar <- caract_hogar%>%mutate(mayores_10 = ifelse(P6040 >= 10, 1,0),
+                                      mayores_15 = ifelse(P6040 >= 15, 1,0), 
+                                      total = 1)
+
+#Se suman los 1's antes creados
+total_personas <- caract_hogar%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(tot_mayores_10 = sum(mayores_10),
+                                                                               tot_mayores_15 = sum(mayores_15),
+                                                                               tot_personas = sum(total))
+#Se juntan las 2 bases para poder calcular las proprociones
+reshape_actividad <- full_join(reshape_actividad, total_personas)
+
+
+#Los NA que habían se reemplazan por 0´s
+reshape_actividad <- reshape_actividad%>%mutate(Trabajo = ifelse(is.na(Trabajo),0,Trabajo),
+                                                Desempleo = ifelse(is.na(Desempleo),0,Desempleo),
+                                                Oficios = ifelse(is.na(Oficios),0,Oficios),
+                                                Estudiante = ifelse(is.na(Estudiante),0,Estudiante),
+                                                Incapacidad = ifelse(is.na(Incapacidad),0,Incapacidad),
+                                                Otra = ifelse(is.na(Otra),0,Otra))
+
+#Se calculan las proporciones correspondientes
+Variables <- c("Trabajo","Desempleo", "Oficios", "Estudiante", "Incapacidad","Otra")
+
+for (activ in Variables) {
+  a <- activ
+  reshape_actividad[,paste(a, "_10_años")] <- reshape_actividad[,a]/reshape_actividad$tot_mayores_10
+  reshape_actividad[,paste(a, "_15_años")] <- reshape_actividad[,a]/reshape_actividad$tot_mayores_15
+  reshape_actividad[,paste(a, "_totales")] <- reshape_actividad[,a]/reshape_actividad$tot_personas
+}
+
+
+#P6920 mide de alguna manera la formalidad, por medio de preguntar si cotiza a un fondo de pensiones
+f_trabajo$P6920[which(f_trabajo$P6920 != 1)] <- 0
+cotizan_pension <- f_trabajo%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(cotizan_pension = sum(P6920, na.rm = TRUE))
+
+#Se unen las bases que van hasta el momento
+fuerza_trabajo <- full_join(reshape_actividad, cotizan_pension)
+
+#Se sacan las proporciones
+fuerza_trabajo$cotizan_pension_10 <- fuerza_trabajo$cotizan_pension/fuerza_trabajo$tot_mayores_10
+fuerza_trabajo$cotizan_pension_15 <- fuerza_trabajo$cotizan_pension/fuerza_trabajo$tot_mayores_15
+fuerza_trabajo$cotizan_pension_tot <- fuerza_trabajo$cotizan_pension/fuerza_trabajo$tot_personas
+
+#Revisamos los nombres de las variables creadas para dejar solo las que puedan ser útiles
+names(fuerza_trabajo)
+fuerza_trabajo <- fuerza_trabajo%>%select(-Trabajo,-Desempleo,-Oficios,-Estudiante,-Incapacidad,-Otra)
+
+#Se exporta la base de datos
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+write.csv(fuerza_trabajo, "Fuerza_trabajo.csv")
+
+#############################Base de salud
+Salud <- read.csv("Salud.csv")
+
+#P6127 estado de salud de las personas, podríamos sacar el estado de salud más común (la moda)
+sum(is.na(Salud$P6127))
+Estado_de_salud <- Salud%>%group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(moda_estado = moda(P6127))%>%ungroup()
+Estado_de_salud%>%count(moda_estado)
+
+#Hogar con madre adolescente (P3335S1A1)
+
+Madres_adolescentes <- Salud%>%
+  mutate(madre_joven = ifelse(is.na(P3335S1A1) | P3335S1A1 >= 20,0,1))%>%
+  group_by(DIRECTORIO, SECUENCIA_P)%>%summarise(madres_jovenes = sum(madre_joven))
+
+#Se juntan las bases armadas con la información de la base de salud
+Union_salud <- full_join(Estado_de_salud, Madres_adolescentes)
+
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+write.csv(Union_salud, "Base_Salud.csv")
+
+###############################Datos de la vivienda
+Datos_vivienda <- read.csv("Datos de la vivienda.csv", sep = ";")
+
+#Variables relevantes
+#CLASE
+#CANT_HOGARES_VIVIENDA
+#P2102 (VÍA DE ACCESO A LA VIVIENDA)
+#P1070 (TIPO DE VIVIENDA)
+#P4005 (MATERIAL PAREDES)
+#P4015 (MATERIAL PISOS)
+#P4567 (MATERIAL TECHO)
+#P8520S1A1 (ESTRATO)
+#P8520S5 (ACUEDUCTO)
+#P8520S3 (ALCANTARILLADO)
+#P8520S4 (RECOLECCIÓN DE BASURAS)
+
+Datos_vivienda <- Datos_vivienda%>%select(DIRECTORIO, SECUENCIA_P, CLASE, CANT_HOGARES_VIVIENDA,
+                                          P2102, P1070, P4005, P4015, P4567, P8520S1A1,
+                                          P8520S5, P8520S3, P8520S4)
+
+
+#Se exporta la base de vivienda
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+write.csv(Datos_vivienda, "Base_Vivienda.csv")
+
+##############################Servicios del hogar
+Servicios_hogar <- read.csv("Servicios del hogar.csv")
+
+#P5000 (NÚMERO DE CUARTOS)
+#P5010 (NÚMERO DE HABITACIONES)
+#P8534 (El hogar tiene espacio exclusivo para preparar alimentos?)
+#CANT_PERSONAS_HOGAR
+#I_HOGAR
+#I_UGASTO
+#PERCAPITA
+
+Servicios_hogar <- Servicios_hogar%>%select(DIRECTORIO, SECUENCIA_P, P5000, P5010,
+                                            P8534, CANT_PERSONAS_HOGAR, I_HOGAR,
+                                            I_UGASTO, PERCAPITA)
+
+#Se exporta la base de Servicios del hogar
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+write.csv(Servicios_hogar, "Base_servicios_hogar.csv")
+
+
+######################################Unión de todas las bases armadas
+
+###Limpiar 
+rm(list = ls())
+cat("\014")
+
+#Directorio donde están las bases definitivas
+setwd("C:/Users/danie/OneDrive/Escritorio/Uniandes/PEG/Big Data and Machine Learning/BD-ML---FinalProject/Data_definitiva")
+
+#Cargar las bases construidas
+Base_educacion <- read.csv("Base_educacion.csv")
+Base_Salud <- read.csv("Base_Salud.csv")
+Base_Servicios_Hogar <- read.csv("Base_Servicios_Hogar.csv")
+condiciones_de_vida <- read.csv("condiciones_de_vida.csv")
+Fuerza_trabajo <- read.csv("Fuerza_trabajo.csv")
+tenencia_financiacion <- read.csv("tenencia_financiacion.csv")
+Base_Vivienda <- read.csv("Base_Vivienda.csv") #La dejo al final porque esta está a nivel vivienda
+
+#Quitar las X porque de hueva las exporté sin cambiar a rownames = FALSE
+
+
+Base_educacion <- Base_educacion%>%select(-X)
+Base_Salud <- Base_Salud%>%select(-X)
+Base_Servicios_Hogar <- Base_Servicios_Hogar%>%select(-X)
+condiciones_de_vida <- condiciones_de_vida%>%select(-X, -SECUENCIA_ENCUESTA, -ORDEN)
+Fuerza_trabajo <- Fuerza_trabajo%>%select(-X)
+tenencia_financiacion <- tenencia_financiacion%>%select(-X, -SECUENCIA_ENCUESTA, -ORDEN, -FEX_C)
+Base_Vivienda <- Base_Vivienda%>%select(-X)
+
+#se unen las bases
+Base_completa <- full_join(Base_educacion, Base_Salud)
+Base_completa <- full_join(Base_completa, Base_Servicios_Hogar)
+Base_completa <- full_join(Base_completa, condiciones_de_vida)
+Base_completa <- full_join(Base_completa, Fuerza_trabajo)
+Base_completa <- full_join(Base_completa, tenencia_financiacion)
+Base_completa <- full_join(Base_completa, Base_Vivienda, by = "DIRECTORIO")
+
+#Solo se mantienen aquellos hogares que tienen a alguien estudiando y paguen algo
+Base_completa <- Base_completa%>%subset(alguien_estudia == 1 & valor_total > 0)
+
+#Revisar el número de NA's
+sapply(Base_completa, function(y) sum(length(which(is.na(y)))))
+
+#Voy a quitar estas variables porque su número de NA´s es demasiado grande imposible de corregir
+Base_completa <- Base_completa%>%select(-P8534, -P784, -P784S1A1, -P784S1A2, -P1075S2,-P1075S1,
+                                        -P3202S6, -P3202S7, -P3203S8, -P3203S9)
+
+
+sapply(Base_completa, function(y) sum(length(which(is.na(y)))))
+
+write.csv(Base_completa, "Base_Completa.csv", row.names = FALSE)
