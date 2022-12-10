@@ -14,7 +14,8 @@ p_load(tidyverse, rvest, data.table, dplyr, skimr, caret, rio,
        ROCR, # ROC curve
        class, readxl, writexl,
        glmnet, janitor, doParallel, 
-       rattle, fastDummies, tidymodels, themis, AER, randomForest,xgboost, ranger)
+       rattle, fastDummies, tidymodels, themis, AER, randomForest,xgboost, ranger,
+       doParallel)
 
 
 #directorio Daniel  
@@ -28,7 +29,8 @@ Base <- Base%>%mutate(Var_y = valor_total/(12*I_HOGAR), log_y = log(Var_y))
 Base_DEF <- Base%>%drop_na()%>%subset(I_HOGAR > 0)
 View(Base_DEF%>%select(valor_total, I_HOGAR, Var_y))
 
-hist(Base_DEF$log_y, breaks = 100)
+hist(Base_final$Var_y, breaks = 100)
+summary(Base_final$Var_y)
 
 #Revisar que no haya quedado ningún NA
 sapply(Base_DEF, function(y) sum(length(which(is.na(y)))))
@@ -83,7 +85,27 @@ Base_modelo$Max_educ%>%count()
 
 #Se carga la base final
 Base_final <- read.csv("La_base_definitiva_final.csv")
-Base_final <- Base_final%>%subset(Var_y <=1)
+Base_final <- Base_final%>%subset(Var_y <= 1)
+
+
+Variables_categoricas <- c("Max_educ", "transporte", 
+                           "tiempo_moda_estudio", "tiempo_max_estudio", "tiempo_min_estudio",
+                           "beca", "subsidio", "credito", "arte", "ciencia", "deportes",
+                           "grupos_estudio", "parque", "lectura", "juegos", "alguna_extra",
+                           "moda_estado", "madres_jovenes", "P5230", "P9090", "P784S1",
+                           "P1077S1", "P1077S2", "P1077S3", "P1077S4", "P1077S5",
+                           "P1077S6", "P1077S7", "P1077S8", "P1077S9", "P1077S10",
+                           "P1077S14", "P1077S15", "P1077S16", "P1077S17", "P1077S19",
+                           "P1077S21", "P1077S22", "P1077S23", "P1075", "P1913S2",
+                           "P3353", "P3354", "P5095", "CLASE", "P2102", "P1070",
+                           "P4005", "P4015", "P4567", "P8520S1A1", "P8520S5", "P8520S3",
+                           "P8520S4") 
+
+
+for (variable in Variables_categoricas) {
+  a <- variable
+  Base_final[,a] <- as.factor(Base_final[,a])
+}
 
 #Se crea el train y el test
 #Armar un test
@@ -207,16 +229,16 @@ for(i in 1:nrow(hyper_grid)) {
 
 #Revisar resultados
 resultadoRF
-which.min(resultadoRF$AVG) #12
+which.min(resultadoRF$AVG) #36
 hyper_grid
-which.min(hyper_grid$OOB_RMSE) #36
+which.min(hyper_grid$OOB_RMSE) #24
 
 
-#entrenar el modelo con los parámetros del mejor modelo para minimizar OOBRMSE
-model <- ranger(
+#entrenar el modelo con los parámetros del mejor modelo para minimizar la personalizada
+model_1 <- ranger(
   formula         = log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total, 
   data            = train_def, 
-  num.trees       = 500,
+  num.trees       = 1500,
   mtry            = 9,
   max.depth       = 10,
   sample.fraction = 1,
@@ -225,22 +247,185 @@ model <- ranger(
 )
 
 #predicción en el test
-pred <- predict(model, test)
+pred_1 <- predict(model_1, test)
 
-hist(pred$predictions)
+hist(pred_1$predictions)
 hist(test$log_y)
 
-RMSE(pred$predictions, test$log_y)
+RMSE(pred_1$predictions, test$log_y)
+
+#entrenar el modelo con los parámetros del mejor modelo para minimizar OOBRMSE
+model_2 <- ranger(
+  formula         = log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total, 
+  data            = train_def, 
+  num.trees       = 1000,
+  mtry            = 9,
+  max.depth       = 10,
+  sample.fraction = 1,
+  seed            = 123, # Notese el seteo de la semilla
+  #importance      = "impurity" 
+)
+
+#predicción en el test
+pred_2 <- predict(model_2, test)
+
+hist(pred_2$predictions)
+hist(test$log_y)
+
+RMSE(pred_2$predictions, test$log_y)
+RMSE(exp(pred_2$predictions), test$Var_y)
+
 #Un XGboost
+require("xgboost")
+#Armado de la grilla
+grid_default <- expand.grid(nrounds = c(3000, 4000),
+                            max_depth = c(5,8,10),
+                            eta = c(0.005),
+                            gamma = c(0,1),
+                            min_child_weight = c(100),
+                            colsample_bytree = c(0.7),
+                            subsample = c(0.6))
+#Semilla
+set.seed(1000)
+#Validación cruzada
+ctrl <- trainControl(method = "cv", number = 5)
 
-#Si es posible un superlearner
+#Toda la potencia al computador
+n_cores <- detectCores()
+cl <- makePSOCKcluster(n_cores-1)
+registerDoParallel(cl)
 
-#PCA
+
+#Modelo XGBoost
+xgboost <- train(
+  log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total,
+  data = train_def,
+  method = "xgbTree",
+  trControl = ctrl,
+  metric = "RMSE",
+  tuneGrid = grid_default,
+  preProcess = c("center", "scale")
+)
+
+
+#Toca quitar lo de los nucleos al final
+stopCluster(cl)
+
+
+write_rds(xgboost, "xgboost_rmse.rds")
+
+predicciones <- predict(xgboost, test)
+R2(predicciones, test$log_y)
+RMSE(predicciones, test$log_y)
 
 #En el XGboost podría ser interesante ver una función de pérdida distinta (con eso salen ya al menos 6 modelos)
 
+#Se construye la métrica personalizada
+custom_summary <- function(data, lev = NULL, model = NULL){
+  out = mean(ifelse((data[, "pred"]-data[, "obs"]) > 0, (data[, "pred"]-data[, "obs"])^2, abs((data[, "pred"]-data[, "obs"])))) 
+  names(out) = c("lin_cuad")
+  out
+}
+
+#Armado de la grilla
+grid_default <- expand.grid(nrounds = c(3000, 4000),
+                            max_depth = c(5,8,10),
+                            eta = c(0.005),
+                            gamma = c(0,1),
+                            min_child_weight = c(100),
+                            colsample_bytree = c(0.7),
+                            subsample = c(0.6))
+#Semilla
+set.seed(1000)
+#Validación cruzada
+ctrl <- trainControl(method = "cv",
+                     number = 5,
+                     summaryFunction = custom_summary)
+
+#Toda la potencia al computador
+n_cores <- detectCores()
+cl <- makePSOCKcluster(n_cores-1)
+registerDoParallel(cl)
 
 
-#Para predecir el R2
-R2(Base_final$log_y, Base_final$predicciones)
+class(train_def$P5095)
 
+#Modelo XGBoost
+xgboost2 <- train(
+  log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total,
+  data = train_def,
+  method = "xgbTree",
+  trControl = ctrl,
+  metric = "lin_cuad",
+  tuneGrid = grid_default,
+  preProcess = c("center", "scale")
+)
+
+write_rds(xgboost2, "xgboost_custom.rds")
+
+#Importancia de las variables
+variable_importance <- varImp(xgboost2)
+
+V = caret::varImp(xgboost2)
+
+plot(V, main = "Importancia de las variables", xlab = "Importancia", ylab = "variable")
+
+V = V$importance[1:10,]
+
+ggplot(
+  V,
+  mapping = NULL,
+  top = dim(V$importance)[1],
+  environment = NULL, fill = "blue"
+)
+
+
+
+#########################Superlearner
+require("tidyverse")
+require("simstudy")
+require("here")
+require("SuperLearner")
+
+# set the seed for reproducibility
+set.seed(123)
+
+
+#Esto de abajo realmente no se está usando
+train_modelo <- train_def%>%dplyr::select(-DIRECTORIO,-SECUENCIA_P.x,-Var_y,-alguna_extra,-ayudas_total)
+train_modelo_x <- train_modelo%>%dplyr::select(-log_y)
+#test
+test_modelo <- test%>%dplyr::select(-DIRECTORIO,-SECUENCIA_P.x,-Var_y,-alguna_extra,-ayudas_total)
+test_modelo_x <- test_modelo%>%dplyr::select(-log_y)
+
+names(train_modelo_x)
+matriz_train <- model.matrix(~. , train_modelo_x)%>%data.frame()
+matriz_test <- model.matrix(~. , test_modelo_x)%>%data.frame()
+
+
+SL.forest1 <- create.Learner("SL.randomForest", list(ntree = 500))
+SL.xg <- create.Learner("SL.xgboost", list(ntrees = 2000))
+SL.elastic <- create.Learner("SL.glmnet")
+
+?SL.glmnet
+
+# Un SL que tiene 2 bosques, uno con 10000 arboles, otro con 100 arboles, y una regresion lineal
+sl.lib <- c(SL.forest1$names,SL.xg$names, SL.elastic$names,"SL.lm", "SL.mean")
+
+
+fitY <- SuperLearner(Y = train_def$log_y, X = data.frame(matriz_train),
+                     method = "method.NNLS", SL.library = sl.lib)
+
+fitY
+
+prediccion_sl <- predict(fitY, matriz_test)
+
+prediccion_sl <- prediccion_sl$pred
+
+R2(prediccion_sl, test$log_y)
+
+RMSE(prediccion_sl, test$log_y)
+
+write_rds(fitY, "SUPERLEARNER2.rds")
+
+superl <- read_rds("SUPERLEARNER2.rds")
