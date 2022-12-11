@@ -4,7 +4,7 @@
 rm(list=ls())
 #Establecer directorios
 #Diego
-setwd("C:/Users/df.osorio11/Documents/aux_docs/bd_econ/PF")
+setwd("C:/Users/Diego/OneDrive/Documents/GitHub/BD-ML---FinalProject/Scripts/Diego")
 
 
 
@@ -112,8 +112,8 @@ X_test <- X_test[, (!names(X_test) %in% drop_Var_y)]
 # lista de variables numericas
 variables_numericas <- c("tiempo_promedio_transporte", "monto_beca", "monto_subsidio",            
                          "monto_credito", "ayudas_total", "P5000", "P5010", "CANT_PERSONAS_HOGAR",       
-                         "I_HOGAR", "I_UGASTO", "PERCAPITA", "Trabajo._10_aÃ.os", "Trabajo._totales",          
-                         "Desempleo._10_aÃ.os", "Oficios._10_aÃ.os", "Estudiante._10_aÃ.os", "Incapacidad._10_aÃ.os", "Otra._10_aÃ.os",            
+                         "I_HOGAR", "I_UGASTO", "PERCAPITA", "Trabajo._10_años", "Trabajo._totales",          
+                         "Desempleo._10_años", "Oficios._10_años", "Estudiante._10_años", "Incapacidad._10_años", "Otra._10_años",            
                          "cotizan_pension_10", "valor_arriendos", "CANT_HOGARES_VIVIENDA")  
 
 
@@ -151,16 +151,13 @@ test_modelos <- data.frame(y_test, test_s)
 test_modelos$y_test <- as.numeric(test_modelos$y_test)
 
 ### GUARDAR BASES PROCESADAS PARA REALIZAR MODELOS
-write_rds(train_modelos, 'data/train_modelos.csv')
-write_rds(val_modelos, 'data/val_modelos.csv')
-write_rds(test_modelos, 'data/test_modelos.csv')
+write.csv(train_modelos, 'data/train_modelos.csv')
+write.csv(val_modelos, 'data/val_modelos.csv')
+write.csv(test_modelos, 'data/test_modelos.csv')
 
 
 ### MODELOS
-
 # ELASTIC NET: 
-
-### ELASTIC NET
 
 # crear K-Fold particiones sobre la base para ajustar los modelos
 set.seed(100)
@@ -199,6 +196,10 @@ modelo_en <- glmnet(
   standardize = FALSE
   
 )
+
+# glmnet_opt$alpha = 0
+# glmnet_opt$lambda = 0
+
 summary(modelo_en)
 
 # calcular vector de predicciones en datos de entrenamiento, validacion y prueba
@@ -208,34 +209,34 @@ y_predict_test <- predict(modelo_en, newx = as.matrix( test_s))
 
 
 #Resultados:
-res_modelo_en <-  as.data.frame(cbind(price_val,mean(price_val)) )
+res_modelo_en <-  as.data.frame(cbind(price_test,mean(price_test)) )
 
 # crear variable de prediccion de precio (exp(valor prediccion)) en datos de validacion 
-res_modelo_en <- res_modelo_en%>%mutate(y_predict_val = exp(y_predict_val))
+res_modelo_en <- res_modelo_en%>%mutate(y_predict_test = exp(y_predict_test))
 
 # crear variable real de precio de educacion en datos de validacion
-res_modelo_en <- res_modelo_en%>%mutate(y_real = price_val)
+res_modelo_en <- res_modelo_en%>%mutate(y_real = price_test)
 
 
 #colnames(res_modelo_en) <- c("Real", "Promedio", "Prediccion")
-res_modelo_en$error <- res_modelo_en$y_real- res_modelo_en$y_predict_val
-res_modelo_en$fun_error <- ifelse(res_modelo_en$y_predict_val>res_modelo_en$y_real, res_modelo_en$error^2, ifelse(res_modelo_en$y_predict_val<res_modelo_en$y_real,res_modelo_en$error,res_modelo_en$error))
+res_modelo_en$error <- res_modelo_en$y_predict_test - res_modelo_en$y_real
+res_modelo_en$fun_error <- ifelse(res_modelo_en$y_predict_test>res_modelo_en$y_real, res_modelo_en$error^2, abs(res_modelo_en$error) )
 
 
 rmse <- sqrt( mean(res_modelo_en$error^2))
 mae <- mean(abs(res_modelo_en$error^2))
 avg <- mean(res_modelo_en$fun_error)
 
-metricas_en <- data.frame(Modelo = "Regresión Lineal",
+metricas_en <- data.frame(Modelo = "Elastic Net",
                           AVG = avg,
                           RMSE = rmse,
                           MAE = mae
 )
 
-# GUARDAR MODELO DE LIN REG
-write_rds( modelo_en,'modelos/modelo_en.RDS')
+# GUARDAR MODELO DE EN
+write_rds( modelo_en,'data/modelo_en.RDS')
 # CARGAR MODELO DE LIN REG
-modelo_en <- readRDS('modelos/modelo_en.RDS')
+modelo_en <- readRDS('data/modelo_en.RDS')
 
 # GUARDAR DATAFRAME DE RESULTADOS LIN REG
 write_rds(res_modelo_en,'data/resultados_en.RDS')
@@ -277,8 +278,7 @@ modelo_lasso
 plot(modelo_lasso)
 lasso_opt <- modelo_lasso$bestTune
 
-
-# Elastic Net  modelo óptimo
+# Lasso  modelo óptimo
 
 # enrtenar/ajustar modelo óptimo
 lasso <- glmnet(
@@ -289,6 +289,10 @@ lasso <- glmnet(
   standardize = FALSE
 )
 
+# lasso_opt$alpha = 1
+# lasso_opt$lambda = 0.1020408
+
+
 summary(lasso)
 
 # calcular vector de predicciones en datos de entrenamiento, validacion y prueba
@@ -298,18 +302,18 @@ y_predict_test <- predict(lasso, newx = as.matrix( test_s))
 
 
 #Resultados:
-res_modelo_lasso <-  as.data.frame(cbind(price_val,mean(price_val)) )
+res_modelo_lasso <-  as.data.frame(cbind(price_test,mean(price_test)) )
 
 # crear variable de prediccion de precio (exp(valor prediccion)) en datos de validacion 
-res_modelo_lasso <- res_modelo_lasso%>%mutate(y_predict_val = exp(y_predict_val))
+res_modelo_lasso <- res_modelo_lasso%>%mutate(y_predict_test = exp(y_predict_test))
 
 # crear variable real de precio de educacion en datos de validacion
-res_modelo_lasso <- res_modelo_lasso%>%mutate(y_real = price_val)
+res_modelo_lasso <- res_modelo_lasso%>%mutate(y_real = price_test)
 
 
 #colnames(res_modelo_en) <- c("Real", "Promedio", "Prediccion")
-res_modelo_lasso$error <- res_modelo_lasso$y_real- res_modelo_lasso$y_predict_val
-res_modelo_lasso$fun_error <- ifelse(res_modelo_lasso$y_predict_val>res_modelo_lasso$y_real, res_modelo_lasso$error^2, ifelse(res_modelo_lasso$y_predict_val<res_modelo_lasso$y_real,res_modelo_lasso$error,res_modelo_lasso$error))
+res_modelo_lasso$error <- res_modelo_lasso$y_predict_test - res_modelo_lasso$y_real
+res_modelo_lasso$fun_error <- ifelse(res_modelo_lasso$y_predict_test>res_modelo_lasso$y_real, res_modelo_lasso$error^2, abs(res_modelo_lasso$error) )
 
 
 rmse <- sqrt( mean(res_modelo_lasso$error^2))
@@ -323,9 +327,9 @@ metricas_lasso <- data.frame(Modelo = "Lasso",
 )
 
 # GUARDAR MODELO DE LIN REG
-write_rds(lasso,'modelos/lasso.RDS')
+write_rds(lasso,'data/lasso.RDS')
 # CARGAR MODELO DE LIN REG
-lasso <- readRDS('modelos/lasso.RDS')
+lasso <- readRDS('data/lasso.RDS')
 
 # GUARDAR DATAFRAME DE RESULTADOS LIN REG
 write_rds(res_modelo_lasso,'data/res_modelo_lasso.RDS')
@@ -336,8 +340,6 @@ res_modelo_lasso <- readRDS('data/res_modelo_lasso.RDS')
 write_rds(metricas_lasso,'data/metricas_lasso.RDS')
 # CARGAR DATAFRAME DE RESULTADOS LIN REG
 metricas_lasso <- readRDS('data/metricas_lasso.RDS')
-
-
 
 
 # RIDGE: ALPHA = 0, PENALTY = L2
@@ -382,8 +384,8 @@ ridge <- glmnet(
 
 summary(ridge)
 
-
-
+# ridge_opt$alpha = 0
+# ridge_opt$lambda = 1.530612
 
 # calcular vector de predicciones en datos de entrenamiento, validacion y prueba
 y_predict_train <- predict(ridge, newx = as.matrix( train_s))
@@ -392,18 +394,17 @@ y_predict_test <- predict(ridge, newx = as.matrix( test_s))
 
 
 #Resultados:
-res_modelo_ridge <-  as.data.frame(cbind(price_val,mean(price_val)) )
+res_modelo_ridge <-  as.data.frame(cbind(price_test,mean(price_test)) )
 
 # crear variable de prediccion de precio (exp(valor prediccion)) en datos de validacion 
-res_modelo_ridge <- res_modelo_ridge%>%mutate(y_predict_val = exp(y_predict_val))
+res_modelo_ridge <- res_modelo_ridge%>%mutate(y_predict_test = exp(y_predict_test))
 
 # crear variable real de precio de educacion en datos de validacion
-res_modelo_ridge <- res_modelo_ridge%>%mutate(y_real = price_val)
-
+res_modelo_ridge <- res_modelo_ridge%>%mutate(y_real = price_test)
 
 #colnames(res_modelo_en) <- c("Real", "Promedio", "Prediccion")
-res_modelo_ridge$error <- res_modelo_ridge$y_real- res_modelo_ridge$y_predict_val
-res_modelo_ridge$fun_error <- ifelse(res_modelo_ridge$y_predict_val>res_modelo_ridge$y_real, res_modelo_ridge$error^2, ifelse(res_modelo_ridge$y_predict_val<res_modelo_ridge$y_real,res_modelo_ridge$error,res_modelo_ridge$error))
+res_modelo_ridge$error <- res_modelo_ridge$y_predict_test- res_modelo_ridge$y_real
+res_modelo_ridge$fun_error <- ifelse(res_modelo_ridge$y_predict_test>res_modelo_ridge$y_real, res_modelo_ridge$error^2, abs(res_modelo_ridge$error))
 
 
 rmse <- sqrt( mean(res_modelo_ridge$error^2))
@@ -417,9 +418,9 @@ metricas_ridge <- data.frame(Modelo = "Ridge",
 )
 
 # GUARDAR MODELO DE LIN REG
-write_rds(ridge,'modelos/ridge.RDS')
+write_rds(ridge,'data/ridge.RDS')
 # CARGAR MODELO DE LIN REG
-ridge <- readRDS('modelos/ridge.RDS')
+ridge <- readRDS('data/ridge.RDS')
 
 # GUARDAR DATAFRAME DE RESULTADOS LIN REG
 write_rds(res_modelo_ridge,'data/res_modelo_ridge.RDS')

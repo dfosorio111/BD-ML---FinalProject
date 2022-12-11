@@ -4,7 +4,7 @@
 rm(list=ls())
 #Establecer directorios
 #Diego
-setwd("C:/Users/df.osorio11/Documents/aux_docs/bd_econ/PF")
+setwd("C:/Users/Diego/OneDrive/Documents/GitHub/BD-ML---FinalProject/Scripts/Diego")
 
 
 
@@ -113,8 +113,8 @@ X_test <- X_test[, (!names(X_test) %in% drop_Var_y)]
 # lista de variables numericas
 variables_numericas <- c("tiempo_promedio_transporte", "monto_beca", "monto_subsidio",            
                          "monto_credito", "ayudas_total", "P5000", "P5010", "CANT_PERSONAS_HOGAR",       
-                         "I_HOGAR", "I_UGASTO", "PERCAPITA", "Trabajo._10_aÃ.os", "Trabajo._totales",          
-                         "Desempleo._10_aÃ.os", "Oficios._10_aÃ.os", "Estudiante._10_aÃ.os", "Incapacidad._10_aÃ.os", "Otra._10_aÃ.os",            
+                         "I_HOGAR", "I_UGASTO", "PERCAPITA", "Trabajo._10_años", "Trabajo._totales",          
+                         "Desempleo._10_años", "Oficios._10_años", "Estudiante._10_años", "Incapacidad._10_años", "Otra._10_años",            
                          "cotizan_pension_10", "valor_arriendos", "CANT_HOGARES_VIVIENDA")  
 
 
@@ -152,9 +152,9 @@ test_modelos <- data.frame(y_test, test_s)
 test_modelos$y_test <- as.numeric(test_modelos$y_test)
 
 ### GUARDAR BASES PROCESADAS PARA REALIZAR MODELOS
-write_rds(train_modelos, 'data/train_modelos.csv')
-write_rds(val_modelos, 'data/val_modelos.csv')
-write_rds(test_modelos, 'data/test_modelos.csv')
+write_csv(train_modelos, 'data/train_modelos.csv')
+write_csv(val_modelos, 'data/val_modelos.csv')
+write_csv(test_modelos, 'data/test_modelos.csv')
 
 
 ### MODELOS
@@ -167,8 +167,8 @@ lin_reg <- lm(y_train~. -alguna_extra1- ayudas_total, data = train_s)
 summary(lin_reg)
 
 ### GUARDAR MODELO LIN REG. ENTRENADO
-write_rds(lin_reg,'modelos/lin_reg.RDS')
-
+write_rds(lin_reg,'data/lin_reg.RDS')
+lin_reg <- readRDS('data/lin_reg.RDS')
 
 # calcular vector de predicciones en datos de entrenamiento, validacion y prueba
 y_predict_train <- predict(lin_reg, train_s)
@@ -202,8 +202,8 @@ res_lin_reg <- res_lin_reg%>%mutate(y_real = price_val)
 
 
 #colnames(res_lin_reg) <- c("Real", "Promedio", "Prediccion")
-res_lin_reg$error <- res_lin_reg$y_real- res_lin_reg$y_predict_val
-res_lin_reg$fun_error <- ifelse(res_lin_reg$y_predict_val>res_lin_reg$y_real, res_lin_reg$error^2, ifelse(res_lin_reg$y_predict_val<res_lin_reg$y_real,res_lin_reg$error,res_lin_reg$error))
+res_lin_reg$error <- res_lin_reg$y_predict_val- res_lin_reg$y_real
+res_lin_reg$fun_error <- ifelse(res_lin_reg$y_predict_val>res_lin_reg$y_real, res_lin_reg$error^2, abs(res_lin_reg$error))
 
 
 rmse <- sqrt( mean(res_lin_reg$error^2))

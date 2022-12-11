@@ -1,0 +1,22 @@
+# generar variables categoricas
+Variables_categoricas <- c("Max_educ", "transporte", 
+                           "tiempo_moda_estudio", "tiempo_max_estudio", "tiempo_min_estudio",
+                           "beca", "subsidio", "credito", "arte", "ciencia", "deportes",
+                           "grupos_estudio", "parque", "lectura", "juegos", "alguna_extra",
+                           "moda_estado", "madres_jovenes", "P5230", "P9090", "P784S1",
+                           "P1077S1", "P1077S2", "P1077S3", "P1077S4", "P1077S5",
+                           "P1077S6", "P1077S7", "P1077S8", "P1077S9", "P1077S10",
+                           "P1077S14", "P1077S15", "P1077S16", "P1077S17", "P1077S19",
+                           "P1077S21", "P1077S22", "P1077S23", "P1075", "P1913S2",
+                           "P3353", "P3354", "P5095", "CLASE", "P2102", "P1070",
+                           "P4005", "P4015", "P4567", "P8520S1A1", "P8520S5", "P8520S3",
+                           "P8520S4")
+
+
+# lista de variables numericas
+variables_numericas <- c("tiempo_promedio_transporte", "monto_beca", "monto_subsidio",            
+                         "monto_credito", "ayudas_total", "P5000", "P5010", "CANT_PERSONAS_HOGAR",       
+                         "I_HOGAR", "I_UGASTO", "PERCAPITA", "Trabajo._10_aÃ.os", "Trabajo._totales",          
+                         "Desempleo._10_aÃ.os", "Oficios._10_aÃ.os", "Estudiante._10_aÃ.os", "Incapacidad._10_aÃ.os", "Otra._10_aÃ.os",            
+                         "cotizan_pension_10", "valor_arriendos", "CANT_HOGARES_VIVIENDA")  
+
