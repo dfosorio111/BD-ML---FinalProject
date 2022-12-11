@@ -184,10 +184,10 @@ EN
 
 #Sigue un RF
 
-sqrt(73) #8.5
+sqrt(198) #14.1
 #hiper grillita
 hyper_grid <- expand.grid(
-  mtry       = c(8,9),
+  mtry       = c(14,15),
   max_depht  = c(5,8,10),
   sampe_size = c(0.6,1),
   num_trees = c(500, 1000, 1500),
@@ -229,17 +229,17 @@ for(i in 1:nrow(hyper_grid)) {
 
 #Revisar resultados
 resultadoRF
-which.min(resultadoRF$AVG) #36
+which.min(resultadoRF$AVG) #12
 hyper_grid
-which.min(hyper_grid$OOB_RMSE) #24
+which.min(hyper_grid$OOB_RMSE) #36
 
 
 #entrenar el modelo con los parámetros del mejor modelo para minimizar la personalizada
 model_1 <- ranger(
   formula         = log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total, 
   data            = train_def, 
-  num.trees       = 1500,
-  mtry            = 9,
+  num.trees       = 500,
+  mtry            = 15,
   max.depth       = 10,
   sample.fraction = 1,
   seed            = 123, # Notese el seteo de la semilla
@@ -258,8 +258,8 @@ RMSE(pred_1$predictions, test$log_y)
 model_2 <- ranger(
   formula         = log_y ~ . -DIRECTORIO-SECUENCIA_P.x-Var_y-alguna_extra-ayudas_total, 
   data            = train_def, 
-  num.trees       = 1000,
-  mtry            = 9,
+  num.trees       = 1500,
+  mtry            = 15,
   max.depth       = 10,
   sample.fraction = 1,
   seed            = 123, # Notese el seteo de la semilla
@@ -363,6 +363,8 @@ xgboost2 <- train(
 
 write_rds(xgboost2, "xgboost_custom.rds")
 
+xgboost2 <- read_rds("xgboost_custom.rds")
+
 #Importancia de las variables
 variable_importance <- varImp(xgboost2)
 
@@ -395,16 +397,17 @@ set.seed(123)
 train_modelo <- train_def%>%dplyr::select(-DIRECTORIO,-SECUENCIA_P.x,-Var_y,-alguna_extra,-ayudas_total)
 train_modelo_x <- train_modelo%>%dplyr::select(-log_y)
 #test
-test_modelo <- test%>%dplyr::select(-DIRECTORIO,-SECUENCIA_P.x,-Var_y,-alguna_extra,-ayudas_total)
+test_modelo <- test2%>%dplyr::select(-DIRECTORIO,-SECUENCIA_P.x,-Var_y,-alguna_extra,-ayudas_total)
 test_modelo_x <- test_modelo%>%dplyr::select(-log_y)
 
 names(train_modelo_x)
 matriz_train <- model.matrix(~. , train_modelo_x)%>%data.frame()
 matriz_test <- model.matrix(~. , test_modelo_x)%>%data.frame()
 
+matriz_test <- matriz_test[names(matriz_test) %in% names(matriz_train)]
 
-SL.forest1 <- create.Learner("SL.randomForest", list(ntree = 500))
-SL.xg <- create.Learner("SL.xgboost", list(ntrees = 2000))
+SL.forest1 <- create.Learner("SL.randomForest", list(ntree = 1000))
+SL.xg <- create.Learner("SL.xgboost", list(ntrees = 3000))
 SL.elastic <- create.Learner("SL.glmnet")
 
 ?SL.glmnet
@@ -413,10 +416,10 @@ SL.elastic <- create.Learner("SL.glmnet")
 sl.lib <- c(SL.forest1$names,SL.xg$names, SL.elastic$names,"SL.lm", "SL.mean")
 
 
-fitY <- SuperLearner(Y = train_def$log_y, X = data.frame(matriz_train),
+fitY2 <- SuperLearner(Y = train_def$log_y, X = data.frame(matriz_train),
                      method = "method.NNLS", SL.library = sl.lib)
 
-fitY
+fitY2
 
 prediccion_sl <- predict(fitY, matriz_test)
 
@@ -429,3 +432,191 @@ RMSE(prediccion_sl, test$log_y)
 write_rds(fitY, "SUPERLEARNER2.rds")
 
 superl <- read_rds("SUPERLEARNER2.rds")
+
+
+#############################Evaluación modelos
+
+##########################Lineales
+##############Lasso
+predicciones_lasso <- predict(lasso, test)
+RMSE(exp(predicciones_lasso), test$Var_y)
+test$predicciones_lasso <- exp(predicciones_lasso)
+test <- test%>%mutate(lasso_personalizado = ifelse(predicciones_lasso - Var_y >0,
+                                                   (predicciones_lasso - Var_y)^2, 
+                                                   abs(predicciones_lasso - Var_y)))
+mean(test$lasso_personalizado)
+
+##############Ridge
+predicciones_ridge <- predict(ridge, test)
+RMSE(exp(predicciones_ridge), test$Var_y)
+test$predicciones_ridge <- exp(predicciones_ridge)
+test <- test%>%mutate(ridge_personalizado = ifelse(predicciones_ridge - Var_y >0,
+                                                   (predicciones_ridge - Var_y)^2, 
+                                                   abs(predicciones_ridge - Var_y)))
+mean(test$ridge_personalizado)
+
+###################Elastic Net
+predicciones_EN <- predict(EN, test)
+RMSE(exp(predicciones_EN), test$Var_y)
+test$predicciones_EN <- exp(predicciones_EN)
+test <- test%>%mutate(EN_personalizado = ifelse(predicciones_EN - Var_y >0,
+                                                   (predicciones_EN - Var_y)^2, 
+                                                   abs(predicciones_EN - Var_y)))
+mean(test$EN_personalizado)
+
+##########################Random Forest (RMSE)
+predicciones_RF <- predict(model_2, test2)
+RMSE(exp(predicciones_RF$predictions), test2$Var_y)
+test2$predicciones_RF <- exp(predicciones_RF$predictions)
+test2 <- test2%>%mutate(RF_personalizado = ifelse(predicciones_RF - Var_y >0,
+                                                (predicciones_RF - Var_y)^2, 
+                                                abs(predicciones_RF - Var_y)))
+mean(test2$RF_personalizado)
+
+########################Random Forest (Personalizada)
+predicciones_RF2 <- predict(model_1, test2)
+RMSE(exp(predicciones_RF2$predictions), test2$Var_y)
+test2$predicciones_RF2 <- exp(predicciones_RF2$predictions)
+test2 <- test2%>%mutate(RF2_personalizado = ifelse(predicciones_RF2 - Var_y >0,
+                                                (predicciones_RF2 - Var_y)^2, 
+                                                abs(predicciones_RF2 - Var_y)))
+mean(test2$RF2_personalizado)
+
+#######################XGBOOST (Entrenado con rmse)
+
+xgboost <- read_rds("xgboost_rmse.rds")
+predicciones_xg <- predict(xgboost, test2)
+RMSE(exp(predicciones_xg), test2$Var_y)
+test2$predicciones_xg <- exp(predicciones_xg)
+test2 <- test2%>%mutate(xg_personalizado = ifelse(predicciones_xg - Var_y >0,
+                                                (predicciones_xg - Var_y)^2, 
+                                                abs(predicciones_xg - Var_y)))
+mean(test2$xg_personalizado)
+
+
+#######################XGBOOST (Entrenado con personalizada)
+predicciones_xg2 <- predict(xgboost2, test2)
+RMSE(exp(predicciones_xg2), test2$Var_y)
+test2$predicciones_xg2 <- exp(predicciones_xg2)
+test2 <- test2%>%mutate(xg2_personalizado = ifelse(predicciones_xg2 - Var_y >0,
+                                                (predicciones_xg2 - Var_y)^2, 
+                                                abs(predicciones_xg2 - Var_y)))
+mean(test2$xg2_personalizado)
+
+########################Superlearner
+
+
+predicciones_sl <- predict(fitY2, matriz_test)
+RMSE(exp(predicciones_sl$pred), test2$Var_y)
+test2$predicciones_sl <- exp(predicciones_sl$pred)
+test2 <- test2%>%mutate(sl_personalizado = ifelse(predicciones_sl - Var_y >0,
+                                                 (predicciones_sl - Var_y)^2, 
+                                                 abs(predicciones_sl - Var_y)))
+mean(test2$sl_personalizado)
+
+########################Superlearner "mejorado"
+predicciones_sl <- predict(fitY2, matriz_test)
+RMSE(exp(predicciones_sl$pred), test$Var_y)
+test$predicciones_sl <- exp(predicciones_sl$pred)
+test <- test%>%mutate(sl_personalizado = ifelse(predicciones_sl - Var_y >0,
+                                                (predicciones_sl - Var_y)^2, 
+                                                abs(predicciones_sl - Var_y)))
+mean(test$sl_personalizado)
+
+########################Mejor modelo Diego
+#Random Forest
+res_rf <- read.csv("res_rf.csv")
+RMSE(res_rf$y_predict, res_rf$y_real)
+res_rf <- res_rf%>%mutate(personalizado = ifelse(y_predict - y_real >0,
+                                                (y_predict - y_real)^2, 
+                                                abs(y_predict - y_real)))
+mean(res_rf$personalizado)
+
+#Bagging
+res_bagg <- read.csv("res_bagg.csv")
+RMSE(res_bagg$y_predict, res_bagg$y_real)
+res_bagg <- res_bagg%>%mutate(personalizado = ifelse(y_predict - y_real >0,
+                                                 (y_predict - y_real)^2, 
+                                                 abs(y_predict - y_real)))
+mean(res_bagg$personalizado)
+
+#Desicion Tree
+res_dt <- read.csv("res_dt.csv")
+RMSE(res_dt$y_predict, res_dt$y_real)
+res_dt <- res_dt%>%mutate(personalizado = ifelse(y_predict - y_real >0,
+                                                     (y_predict - y_real)^2, 
+                                                     abs(y_predict - y_real)))
+mean(res_dt$personalizado)
+
+#####################################Gráficos del mejor
+#Gráfico comparativo
+ggplot(res_rf, aes(x=y_real))+
+  geom_histogram(color="darkblue", fill="blue", bins = 200, alpha = 1)+
+  geom_histogram(aes(x=y_predict), color="red", fill="red", bins = 200, alpha = 0.5)+
+  theme_classic()+
+  xlab("Gasto en educación como proporciónn del ingreso del hogar")+
+  ylab("Frecuencia")+
+  ggtitle("Distribución del valor real y valor el predicho")+
+  theme(text = element_text(size = 16), plot.title = element_text(size = 20, hjust = 0.5))
+
+summary(test2$Var_y)
+summary(test2$predicciones_xg2)
+sd(test2$predicciones_xg2)
+#Grafico del error
+ggplot(res_rf, aes(x=(y_predict - y_real) ))+
+  geom_histogram(color="darkblue", fill="blue", bins = 200, alpha = 1)+
+  theme_classic()+
+  xlab("Error de predicción")+
+  ylab("Frecuencia")+
+  ggtitle("Distribución del error")+
+  theme(text = element_text(size = 16), plot.title = element_text(size = 20, hjust = 0.5))
+
+summary(res_rf$error)
+sd(res_rf$error)
+########################xgboost
+test2 <- test%>%subset(Var_y <= 0.5)
+
+ggplot(test2, aes(x=Var_y))+
+  geom_histogram(color="darkblue", fill="blue", bins = 200, alpha = 1)+
+  geom_histogram(aes(x=predicciones_xg2), color="red", fill="red", bins = 200, alpha = 0.5)+
+  theme_classic()+
+  xlab("Gasto en educación como proporciónn del ingreso del hogar")+
+  ylab("Frecuencia")+
+  ggtitle("Distribución del valor real y valor el predicho")+
+  theme(text = element_text(size = 16), plot.title = element_text(size = 20, hjust = 0.5))
+
+#Grafico del error
+ggplot(test2, aes(x=(predicciones_xg2 - Var_y) ))+
+  geom_histogram(color="darkblue", fill="blue", bins = 200, alpha = 1)+
+  theme_classic()+
+  xlab("Gasto en educación como proporciónn del ingreso del hogar")+
+  ylab("Frecuencia")+
+  ggtitle("Distribución del error")+
+  theme(text = element_text(size = 16), plot.title = element_text(size = 20, hjust = 0.5))
+
+max(res_rf$y_real)
+max(test$Var_y)
+max(test2$Var_y)
+
+#Gráficos
+#Se considera pobre?
+
+#I_HOGAR
+ggplot(Base_final, aes(x = log(tiempo_promedio_transporte), y = log_y, colour = factor(transporte)))+
+  geom_smooth(method='lm', se = FALSE)
+
+
+pobres <- Base_final%>%subset(P5230 == 1)
+no_pobres <- Base_final%>%subset(P5230 == 2)
+
+
+ggplot(Base_final, aes(x= Var_y, fill = factor(P5230)))+
+  geom_histogram( bins = 200, alpha = 1)+
+  theme_classic()+
+  xlab("Gasto en educación como proporciónn del ingreso del hogar")+
+  ylab("Frecuencia")+
+  ggtitle("Distribución del error")+
+  theme(text = element_text(size = 16), plot.title = element_text(size = 20, hjust = 0.5))
+
+summary(pobres$Var_y)
+summary(no_pobres$Var_y)
